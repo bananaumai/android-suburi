@@ -21,13 +21,15 @@ class MainActivity : AppCompatActivity() {
             "tcp://10.0.2.2:1883", MqttClient.generateClientId()
         )
 
-        mqttClient.connect(this, object : IMqttActionListener {
+        mqttClient.connect("banana", object : IMqttActionListener {
             override fun onSuccess(asyncActionToken: IMqttToken?) {
-                Log.d("MQTT", "connected")
+                val ctx = asyncActionToken!!.userContext as String
+                Log.d("MQTT", "connected ${ctx}")
             }
 
             override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                Log.d("MQTT", "failed to connect")
+                val ctx = asyncActionToken!!.userContext as String
+                Log.d("MQTT", "failed to connect ${ctx}")
             }
         })
     }
