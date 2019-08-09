@@ -1,5 +1,6 @@
 package dev.bananaumai.android.suburi.mqtt
 
+import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
@@ -52,6 +53,10 @@ class MainActivity : AppCompatActivity() {
                 Log.d("MQTT", "failed to connect ${ctx}")
             }
         })
+
+        Intent(this, EmitterService::class.java).also { intent ->
+            startService(intent)
+        }
     }
 
     override fun onDestroy() {
