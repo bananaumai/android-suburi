@@ -51,6 +51,7 @@ class EmitterService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.v("EmitterService", "onDestroy")
         serviceJob.cancel()
     }
 }

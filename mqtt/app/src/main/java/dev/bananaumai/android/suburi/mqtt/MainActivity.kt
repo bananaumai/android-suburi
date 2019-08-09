@@ -1,15 +1,25 @@
 package dev.bananaumai.android.suburi.mqtt
 
+import android.app.PendingIntent
 import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.widget.Button
+import kotlinx.android.synthetic.main.activity_main.*
+import kotlinx.coroutines.*
 import org.eclipse.paho.android.service.MqttAndroidClient
 import org.eclipse.paho.client.mqttv3.*
 
 
 class MainActivity : AppCompatActivity() {
+
+    val activityJob = Job()
+    val activityScope = CoroutineScope(Dispatchers.Main + activityJob)
+
     lateinit var mqttClient: MqttAndroidClient
+    var isRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,14 +64,48 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        Intent(this, EmitterService::class.java).also { intent ->
-            startService(intent)
-        }
+        startUpdateButtonUI()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mqttClient.unregisterResources();
+        mqttClient.unregisterResources()
         mqttClient.close()
+        activityJob.cancel()
+    }
+
+    fun toggle(view: View) {
+        isRunning = if (isRunning) {
+            Intent(this, EmitterService::class.java).also { intent ->
+                stopService(intent)
+            }
+            false
+        } else {
+            Intent(this, EmitterService::class.java).also { intent ->
+                startService(intent)
+            }
+            true
+        }
+    }
+
+    private fun startUpdateButtonUI() {
+        val button = findViewById<Button>(R.id.button)
+        var prevState = isRunning
+
+        activityScope.launch {
+            while (true) {
+                delay(100)
+
+                val newText = if (isRunning) {
+                    "Stop"
+                } else {
+                    "Run"
+                }
+                if (prevState != isRunning) {
+                    button.text = newText
+                    prevState = isRunning
+                }
+            }
+        }
     }
 }
