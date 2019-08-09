@@ -1,9 +1,11 @@
 package dev.bananaumai.android.suburi.mqtt
 
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
@@ -39,9 +41,15 @@ class EmitterService : Service() {
         if(::job.isInitialized) {
             Log.d("EmitterService","Job is already started")
         } else {
+            val broadCastManager = LocalBroadcastManager.getInstance(this)
             job = serviceScope.launch {
                 randomIntStream.collect { num ->
                     Log.d("EmitterService", "consume random stream: $num")
+                    Intent().also { intent ->
+                        intent.putExtra("num", num)
+                        intent.action = "randomNumber"
+                        broadCastManager.sendBroadcast(intent)
+                    }
                 }
             }
         }

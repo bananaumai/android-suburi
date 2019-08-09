@@ -1,25 +1,39 @@
 package dev.bananaumai.android.suburi.mqtt
 
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Button
+import android.widget.TextView
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.coroutines.*
 import org.eclipse.paho.android.service.MqttAndroidClient
 import org.eclipse.paho.client.mqttv3.*
+import org.w3c.dom.Text
 
 
 class MainActivity : AppCompatActivity() {
 
-    val activityJob = Job()
-    val activityScope = CoroutineScope(Dispatchers.Main + activityJob)
+    private val activityJob = Job()
+    private val activityScope = CoroutineScope(Dispatchers.Main + activityJob)
+    private lateinit var mqttClient: MqttAndroidClient
+    private var isRunning = false
+    private var randomNum = 0
 
-    lateinit var mqttClient: MqttAndroidClient
-    var isRunning = false
+    private val randomNumberReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent != null) {
+                randomNum = intent.getIntExtra("num", 0)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,7 +78,10 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        LocalBroadcastManager.getInstance(this).registerReceiver(randomNumberReceiver, IntentFilter("randomNumber"))
+
         startUpdateButtonUI()
+        startUpdateRandomNumberUI()
     }
 
     override fun onDestroy() {
@@ -104,6 +121,22 @@ class MainActivity : AppCompatActivity() {
                 if (prevState != isRunning) {
                     button.text = newText
                     prevState = isRunning
+                }
+            }
+        }
+    }
+
+    private fun startUpdateRandomNumberUI() {
+        val txt = findViewById<TextView>(R.id.randomNumber)
+        var prevState = randomNum
+
+        activityScope.launch {
+            while (true) {
+                delay(50)
+
+                if (prevState != randomNum) {
+                    txt.text = randomNum.toString()
+                    prevState = randomNum
                 }
             }
         }
