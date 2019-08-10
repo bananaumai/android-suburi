@@ -6,23 +6,20 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.view.View
 import android.widget.Button
 import android.widget.TextView
+import androidx.lifecycle.Observer
+import androidx.lifecycle.ViewModelProviders
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
-
-    private val activityJob = Job()
-    private val activityScope = CoroutineScope(Dispatchers.Main + activityJob)
-    private var isRunning = false
-    private var randomNum = 0
+    private lateinit var state: StateViewModel
+    private lateinit var randomNumber: NumberViewModel
 
     private val randomNumberReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent != null) {
-                randomNum = intent.getIntExtra("num", 0)
+                randomNumber.currentNumber.value = intent.getIntExtra("num", 0)
             }
         }
     }
@@ -36,64 +33,39 @@ class MainActivity : AppCompatActivity() {
             startService(intent)
         }
 
-        startUpdateButtonUI()
-        startUpdateRandomNumberUI()
+        val button = findViewById<Button>(R.id.button)
+        state = ViewModelProviders.of(this).get(StateViewModel::class.java)
+        state.currentState.observe(this, Observer<StateViewModel.State> { state ->
+            button.text = when (state) {
+                StateViewModel.State.RUNNING -> {
+                    Intent(this, EmitterService::class.java).also { intent ->
+                        startService(intent)
+                    }
+                    "RUNNING"
+                }
+                else -> {
+                    Intent(this, EmitterService::class.java).also { intent ->
+                        stopService(intent)
+                    }
+                    "STOPPED"
+                }
+            }
+        })
+        button.setOnClickListener { state.flip() }
+
+        val randomNumberText = findViewById<TextView>(R.id.randomNumber)
+        randomNumber = ViewModelProviders.of(this).get(NumberViewModel::class.java)
+        randomNumber.currentNumber.observe(this, Observer<Int> { num ->
+            if (num == null) {
+                randomNumberText.text = ""
+            } else {
+                randomNumberText.text = num.toString()
+            }
+        })
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        activityJob.cancel()
         LocalBroadcastManager.getInstance(this).unregisterReceiver(randomNumberReceiver)
-    }
-
-    fun toggle(view: View) {
-        isRunning = if (isRunning) {
-            Intent(this, EmitterService::class.java).also { intent ->
-                stopService(intent)
-            }
-            false
-        } else {
-            Intent(this, EmitterService::class.java).also { intent ->
-                startService(intent)
-            }
-            true
-        }
-    }
-
-    private fun startUpdateButtonUI() {
-        val button = findViewById<Button>(R.id.button)
-        var prevState = isRunning
-
-        activityScope.launch {
-            while (true) {
-                delay(100)
-
-                val newText = if (isRunning) {
-                    "Stop"
-                } else {
-                    "Run"
-                }
-                if (prevState != isRunning) {
-                    button.text = newText
-                    prevState = isRunning
-                }
-            }
-        }
-    }
-
-    private fun startUpdateRandomNumberUI() {
-        val txt = findViewById<TextView>(R.id.randomNumber)
-        var prevState = randomNum
-
-        activityScope.launch {
-            while (true) {
-                delay(50)
-
-                if (prevState != randomNum) {
-                    txt.text = randomNum.toString()
-                    prevState = randomNum
-                }
-            }
-        }
     }
 }
