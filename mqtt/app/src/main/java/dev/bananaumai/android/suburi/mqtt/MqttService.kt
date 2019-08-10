@@ -8,11 +8,15 @@ import android.content.IntentFilter
 import android.os.IBinder
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import org.eclipse.paho.android.service.MqttAndroidClient
 import org.eclipse.paho.client.mqttv3.*
 
 class MqttService : Service() {
-    private lateinit var client: MqttAndroidClient
+    private val serviceJob = Job()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private val connectRetryCh = Channel<Boolean>()
 
     private val randomNumberReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -29,6 +33,9 @@ class MqttService : Service() {
             }
         }
     }
+
+    private lateinit var client: MqttAndroidClient
+    private lateinit var connectRetryJob: Job
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -58,32 +65,18 @@ class MqttService : Service() {
             }
         })
 
-        LocalBroadcastManager.getInstance(this).registerReceiver(randomNumberReceiver, IntentFilter("randomNumber"))
+        connectRetryJob = serviceScope.launch {
+            Log.v("MqttService", "launch connect retry job")
+            while (connectRetryCh.receive()) {
+                Log.d("MqttService", "retry connect!")
+                connect()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.v("MqttService", "onStartCommand")
-
-        if (!client.isConnected) {
-            Log.d("MqttService", "Try to connect")
-
-            val connectOptions = MqttConnectOptions().apply {
-                isAutomaticReconnect = true
-            }
-
-            client.connect(connectOptions, "banana", object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    val ctx = asyncActionToken!!.userContext as String
-                    Log.i("MqttService", "connected ${ctx}")
-                }
-
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    val ctx = asyncActionToken!!.userContext as String
-                    Log.e("MqttService", "failed to connect ${ctx}")
-                }
-            })
-        }
-
+        connect()
         return START_STICKY
     }
 
@@ -92,6 +85,37 @@ class MqttService : Service() {
         client.unregisterResources()
         client.close()
         client.disconnect()
+        serviceJob.cancel()
+        connectRetryCh.cancel()
         LocalBroadcastManager.getInstance(this).unregisterReceiver(randomNumberReceiver)
+    }
+
+    private fun connect() {
+        if (!client.isConnected) {
+            Log.d("MqttService", "Try to connect")
+
+            val connectOptions = MqttConnectOptions().apply {
+                isAutomaticReconnect = true
+            }
+
+            client.connect(connectOptions, null, object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) {
+                    Log.i("MqttService", "connected")
+                    LocalBroadcastManager
+                        .getInstance(this@MqttService)
+                        .registerReceiver(randomNumberReceiver, IntentFilter("randomNumber"))
+                    connectRetryCh.cancel()
+                    connectRetryJob.cancel()
+                }
+
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    Log.e("MqttService", "failed to connect")
+                    serviceScope.launch {
+                        delay(1000)
+                        connectRetryCh.send(true)
+                    }
+                }
+            })
+        }
     }
 }
