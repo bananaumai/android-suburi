@@ -6,7 +6,6 @@ import android.os.IBinder
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlin.random.Random
@@ -14,20 +13,20 @@ import kotlin.random.Random
 class EmitterService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
-    private lateinit var randomIntStream: Flow<Int>
-    private lateinit var job: Job
-
-    override fun onCreate() {
-        super.onCreate()
-        Log.v("EmitterService", "onCreate")
-
-        randomIntStream = flow {
+    private val randomNumberStream by lazy {
+        flow {
             while(true) {
                 delay(1000)
                 val num = Random.nextInt(0, 100)
                 emit(num)
             }
         }
+    }
+    private lateinit var job: Job
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.v("EmitterService", "onCreate")
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -42,7 +41,7 @@ class EmitterService : Service() {
         } else {
             val broadCastManager = LocalBroadcastManager.getInstance(this)
             job = serviceScope.launch {
-                randomIntStream.collect { num ->
+                randomNumberStream.collect { num ->
                     Log.d("EmitterService", "consume random stream: $num")
                     Intent().also { intent ->
                         intent.putExtra("num", num)

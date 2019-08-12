@@ -17,32 +17,15 @@ class MqttService : Service() {
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private val connectRetryCh = Channel<Boolean>()
-
-    private val randomNumberReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            Log.v("MqttService", "onReceive")
-            if (intent != null) {
-                val randomNum = intent.getIntExtra("num", 0)
-                if (client.isConnected) {
-                    Log.v("MqttService", "try to publish message with $randomNum")
-                    MqttMessage().also { msg ->
-                        msg.payload = randomNum.toString().toByteArray()
-                        client.publish("/test", msg)
-                    }
-                }
-            }
+    private val connectRetryJob = serviceScope.launch {
+        Log.v("MqttService", "launch connect retry job")
+        while (connectRetryCh.receive()) {
+            Log.d("MqttService", "retry connect!")
+            connect()
         }
     }
-
-    private lateinit var client: MqttAndroidClient
-    private lateinit var connectRetryJob: Job
-
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
-
-    override fun onCreate() {
-        client = MqttAndroidClient(
+    private val client: MqttAndroidClient by lazy {
+        val client = MqttAndroidClient(
             this,
             "tcp://10.0.2.2:1883", MqttClient.generateClientId()
         )
@@ -65,13 +48,31 @@ class MqttService : Service() {
             }
         })
 
-        connectRetryJob = serviceScope.launch {
-            Log.v("MqttService", "launch connect retry job")
-            while (connectRetryCh.receive()) {
-                Log.d("MqttService", "retry connect!")
-                connect()
+        client
+    }
+    private val randomNumberReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            Log.v("MqttService", "onReceive")
+            if (intent != null) {
+                val randomNum = intent.getIntExtra("num", 0)
+                if (client.isConnected) {
+                    Log.v("MqttService", "try to publish message with $randomNum")
+                    MqttMessage().also { msg ->
+                        msg.payload = randomNum.toString().toByteArray()
+                        client.publish("/test", msg)
+                    }
+                }
             }
         }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.v("MqttServide", "onCreate")
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
