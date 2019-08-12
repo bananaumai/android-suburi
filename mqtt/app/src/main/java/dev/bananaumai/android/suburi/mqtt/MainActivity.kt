@@ -9,12 +9,12 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
 import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModelProviders
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import org.koin.android.viewmodel.ext.android.viewModel
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var state: StateViewModel
-    private lateinit var randomNumber: NumberViewModel
+    private val state: StateViewModel by viewModel()
+    private val randomNumber: NumberViewModel by viewModel()
 
     private val randomNumberReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -34,7 +34,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         val button = findViewById<Button>(R.id.button)
-        state = ViewModelProviders.of(this).get(StateViewModel::class.java)
         state.currentState.observe(this, Observer<StateViewModel.State> { state ->
             button.text = when (state) {
                 StateViewModel.State.RUNNING -> {
@@ -54,7 +53,6 @@ class MainActivity : AppCompatActivity() {
         button.setOnClickListener { state.flip() }
 
         val randomNumberText = findViewById<TextView>(R.id.randomNumber)
-        randomNumber = ViewModelProviders.of(this).get(NumberViewModel::class.java)
         randomNumber.currentNumber.observe(this, Observer<Int> { num ->
             if (num == null) {
                 randomNumberText.text = ""
