@@ -15,7 +15,7 @@ class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         logfile = File(filesDir, "log.txt")
-        loggingProcess = Runtime.getRuntime().exec("logcat -f ${logfile.absolutePath} -r 100 -n 2 -v time *:S ${TAG}:I")
+        loggingProcess = Runtime.getRuntime().exec("logcat -f ${logfile.absolutePath} -r 100 -n 2 -v UTC -v year *:S ${TAG}:I")
         Log.d(TAG, "This should be ignored")
         Log.i(TAG, "hello world")
     }
