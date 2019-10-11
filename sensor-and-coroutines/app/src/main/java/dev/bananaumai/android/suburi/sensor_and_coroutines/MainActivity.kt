@@ -54,9 +54,12 @@ class MainActivity : AppCompatActivity() {
             val handlerThread = HandlerThread("test", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
             val handler = Handler(handlerThread.looper)
             accelerometerFlow(this@MainActivity, handler)
-                .onCompletion { handlerThread.quitSafely() }
+                .onCompletion {
+                    Log.i("MainActivity", "accelerometerFlow completed")
+                    handlerThread.quitSafely()
+                }
                 .collect {
-                    Log.i("MainActivity", "$it")
+                    Log.d("MainActivity", "$it")
                 }
         }
     }
@@ -88,5 +91,6 @@ fun accelerometerFlow(context: Context, handler: Handler) = channelFlow {
 
     awaitClose {
         sensorManager.unregisterListener(sensorEventListener, sensor)
+        Log.i("accelerometerFlow", "unregistered listener")
     }
 }
