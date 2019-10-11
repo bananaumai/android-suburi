@@ -12,13 +12,10 @@ import android.os.HandlerThread
 import android.os.Process
 import android.util.Log
 import android.widget.Button
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.*
-import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.onCompletion
 
 @ExperimentalCoroutinesApi
 class MainActivity : AppCompatActivity() {
@@ -55,7 +52,7 @@ class MainActivity : AppCompatActivity() {
         job = backgroundScope.launch {
             accelerometerFlow(this@MainActivity)
                 .collect {
-                    Log.d("MainActivity", "$it")
+                    Log.d("MainActivity", "$it - ${Thread.currentThread().name}")
                 }
         }
     }
@@ -67,15 +64,13 @@ class MainActivity : AppCompatActivity() {
 
 @ExperimentalCoroutinesApi
 fun accelerometerFlow(context: Context) = channelFlow {
-    val handlerThread = HandlerThread("test", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
-    val handler = Handler(handlerThread.looper)
-
     val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
     val sensorEventListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent?) {
-            Log.v("accelerometerFlow", "$event")
+            Log.v("accelerometerFlow", "$event - ${Thread.currentThread().name}")
             CoroutineScope(coroutineContext).launch {
+                Log.v("accelerometerFlow", "inside launch - ${Thread.currentThread().name}")
                 send(event?.values?.toList())
             }
         }
@@ -84,6 +79,10 @@ fun accelerometerFlow(context: Context) = channelFlow {
     }
 
     val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+
+    val handlerThread = HandlerThread("test", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
+
+    val handler = Handler(handlerThread.looper)
 
     sensorManager.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_NORMAL, handler)
 
