@@ -22,6 +22,9 @@ import kotlinx.coroutines.flow.onCompletion
 
 @ExperimentalCoroutinesApi
 class MainActivity : AppCompatActivity() {
+    private val supervisor = SupervisorJob()
+    private val backgroundScope = CoroutineScope(supervisor + Dispatchers.Default)
+
     private var working = false
     private var job: Job? = null
 
@@ -49,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun start() {
-        job = lifecycleScope.launch {
+        job = backgroundScope.launch {
             accelerometerFlow(this@MainActivity)
                 .collect {
                     Log.d("MainActivity", "$it")
