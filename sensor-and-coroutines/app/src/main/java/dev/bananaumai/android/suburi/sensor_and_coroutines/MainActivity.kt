@@ -12,6 +12,7 @@ import android.os.HandlerThread
 import android.os.Process
 import android.util.Log
 import android.widget.Button
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.*
 import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.channels.awaitClose
@@ -19,10 +20,8 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onCompletion
 
+@ExperimentalCoroutinesApi
 class MainActivity : AppCompatActivity() {
-    private val sj = SupervisorJob()
-    private val scope = CoroutineScope(sj + Dispatchers.Default)
-
     private var working = false
     private var job: Job? = null
 
@@ -50,14 +49,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun start() {
-        job = scope.launch {
-            val handlerThread = HandlerThread("test", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
-            val handler = Handler(handlerThread.looper)
-            accelerometerFlow(this@MainActivity, handler)
-                .onCompletion {
-                    Log.i("MainActivity", "accelerometerFlow completed")
-                    handlerThread.quitSafely()
-                }
+        job = lifecycleScope.launch {
+            accelerometerFlow(this@MainActivity)
                 .collect {
                     Log.d("MainActivity", "$it")
                 }
@@ -69,15 +62,17 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-fun accelerometerFlow(context: Context, handler: Handler) = channelFlow {
-    val handlerScope = CoroutineScope(coroutineContext + handler.asCoroutineDispatcher())
+@ExperimentalCoroutinesApi
+fun accelerometerFlow(context: Context) = channelFlow {
+    val handlerThread = HandlerThread("test", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
+    val handler = Handler(handlerThread.looper)
 
     val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
     val sensorEventListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent?) {
             Log.v("accelerometerFlow", "$event")
-            handlerScope.launch {
+            CoroutineScope(coroutineContext).launch {
                 send(event?.values?.toList())
             }
         }
@@ -91,6 +86,6 @@ fun accelerometerFlow(context: Context, handler: Handler) = channelFlow {
 
     awaitClose {
         sensorManager.unregisterListener(sensorEventListener, sensor)
-        Log.i("accelerometerFlow", "unregistered listener")
+        handlerThread.quitSafely()
     }
 }
