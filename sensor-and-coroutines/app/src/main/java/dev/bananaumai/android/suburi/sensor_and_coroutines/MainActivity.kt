@@ -17,9 +17,9 @@ import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onCompletion
 
 class MainActivity : AppCompatActivity() {
-
     private val sj = SupervisorJob()
     private val scope = CoroutineScope(sj + Dispatchers.Default)
 
@@ -51,7 +51,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun start() {
         job = scope.launch {
-            accelerometerFlow(this@MainActivity)
+            val handlerThread = HandlerThread("test", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
+            val handler = Handler(handlerThread.looper)
+            accelerometerFlow(this@MainActivity, handler)
+                .onCompletion { handlerThread.quitSafely() }
                 .collect {
                     Log.i("MainActivity", "$it")
                 }
@@ -63,44 +66,27 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-fun accelerometerFlow(context: Context) = channelFlow {
-    val handlerThread =
-        HandlerThread("test", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
-
-    val handler = Handler(handlerThread.looper)
-
+fun accelerometerFlow(context: Context, handler: Handler) = channelFlow {
     val handlerScope = CoroutineScope(coroutineContext + handler.asCoroutineDispatcher())
 
     val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
-    val listener = object : SensorEventListener {
+    val sensorEventListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent?) {
             Log.v("accelerometerFlow", "$event")
-
-            val sensorType = event?.sensor?.type
-            if (sensorType != Sensor.TYPE_LINEAR_ACCELERATION) {
-                return
-            }
-
-            val lat = event.values[0]
-            val lon = event.values[2]
-            val vert = event.values[1]
-
             handlerScope.launch {
-                send(Triple(lat, lon, vert))
+                send(event?.values?.toList())
             }
         }
 
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
 
     val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
 
-    sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL, handler)
+    sensorManager.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_NORMAL, handler)
 
     awaitClose {
-        sensorManager.unregisterListener(listener, sensor)
-        handlerThread.quitSafely()
+        sensorManager.unregisterListener(sensorEventListener, sensor)
     }
 }
