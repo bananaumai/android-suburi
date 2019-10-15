@@ -14,8 +14,7 @@ import android.util.Log
 import android.widget.Button
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.*
 
 @ExperimentalCoroutinesApi
 class MainActivity : AppCompatActivity() {
@@ -51,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private fun start() {
         job = backgroundScope.launch {
             accelerometerFlow(this@MainActivity)
+                .onEach { Log.d("Throttle", it.toString() )}
                 .collect {
                     Log.d("MainActivity", "$it - ${Thread.currentThread().name}")
                 }
@@ -71,7 +71,7 @@ fun accelerometerFlow(context: Context) = channelFlow {
             Log.v("accelerometerFlow", "$event - ${Thread.currentThread().name}")
             CoroutineScope(coroutineContext).launch {
                 Log.v("accelerometerFlow", "inside launch - ${Thread.currentThread().name}")
-                send(event?.values?.toList())
+                offer(event?.values?.toList())
             }
         }
 
