@@ -36,20 +36,28 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-
 class SampleWork(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = coroutineScope {
-        val l = Loop(coroutineContext)
+        try {
+            val l = Loop(coroutineContext)
 
-        repeat(11) {
-            Log.d("SampleWork", "send - $it")
-            l.send(it)
-            delay(1000)
+            repeat(11) {
+                Log.d("SampleWork", "send - $it")
+                l.send(it)
+                delay(1000)
+            }
+
+            l.close()
+
+            Result.success()
+        } catch (e: Exception) {
+            // This block is executed when the Task is canceled
+            Log.e("SampleWork", "failed", e)
+            throw e
+        } finally {
+            // This block is executed when the Task is canceled
+            Log.i("SampleWork", "ensure to execute something important here")
         }
-
-        l.close()
-
-        Result.success()
     }
 
     class Loop(coroutineContext: CoroutineContext) {
