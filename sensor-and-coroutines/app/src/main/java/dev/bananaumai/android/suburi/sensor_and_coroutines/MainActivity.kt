@@ -84,10 +84,27 @@ fun accelerometerFlow(context: Context) = channelFlow {
 
     val handler = Handler(handlerThread.looper)
 
-    sensorManager.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_NORMAL, handler)
+    try {
 
-    awaitClose {
+        Log.v("accelerometerFlow", "will delay 3000 msec")
+
+        delay(3000)
+
+        sensorManager.registerListener(sensorEventListener, sensor, SensorManager.SENSOR_DELAY_NORMAL, handler)
+
+        Log.v("accelerometerFlow", "registered sensor listener")
+
+        Log.v("accelerometerFlow", "will delay 3000 msec")
+
+        delay(3000)
+
+        awaitClose()
+
+    } finally {
+
         sensorManager.unregisterListener(sensorEventListener, sensor)
         handlerThread.quitSafely()
+        Log.d("accelerometerFlow", "finalize-----------!")
+
     }
 }
