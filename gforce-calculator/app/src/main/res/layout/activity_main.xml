@@ -1,18 +1,102 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Hello World!"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintLeft_toLeftOf="parent"
-        app:layout_constraintRight_toRightOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+    <data>
+        <variable
+            name="acceleration"
+            type="dev.bananaumai.suburi.gforce_calculator.AccelerationViewModel" />
+        <variable
+            name="gravity"
+            type="dev.bananaumai.suburi.gforce_calculator.GravityViewModel" />
+    </data>
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        tools:context=".MainActivity">
+
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginStart="32dp"
+            android:layout_marginTop="32dp"
+            android:layout_marginEnd="32dp"
+            android:layout_marginBottom="32dp"
+            android:orientation="vertical"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="1.0"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintVertical_bias="0.0">
+
+            <TextView
+                android:id="@+id/acceleration_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Acceleration"
+                android:textSize="24sp" />
+
+            <TextView
+                android:id="@+id/acceleration_x"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"x: " + acceleration.data.x}' />
+
+            <TextView
+                android:id="@+id/acceleration_y"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"y: " + acceleration.data.y}' />
+
+            <TextView
+                android:id="@+id/acceleration_z"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"z: " + acceleration.data.z}' />
+
+            <TextView
+                android:id="@+id/acceleration_gforce"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"g-force: " + acceleration.data.gforce}' />
+
+            <TextView
+                android:id="@+id/gravity_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Gravity"
+                android:textSize="24sp" />
+
+            <TextView
+                android:id="@+id/gravity_x"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"x: " + gravity.data.x}' />
+
+            <TextView
+                android:id="@+id/gravity_y"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"y: " + gravity.data.y}' />
+
+            <TextView
+                android:id="@+id/gravity_z"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"z: " + gravity.data.z}' />
+
+            <TextView
+                android:id="@+id/gravity_gforce"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text='@{"g-force: " + gravity.data.gforce}' />
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
+f
