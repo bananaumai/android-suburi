@@ -40,31 +40,22 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 button.isEnabled = false
 
-                var succeeded = false
+                isRunning = !isRunning
 
                 if (isRunning) {
-                    succeeded = mqttService?.disconnect() ?: false
+                    mqttService?.start()
+                    text.text = "RUNNING"
+                    button.text = "STOP"
                 } else {
-                    succeeded = mqttService?.connect() ?: false
-                }
-
-                if (succeeded) {
-                    isRunning = !isRunning
-
-                    if (isRunning) {
-                        text.text = "RUNNING"
-                        button.text = "STOP"
-                    } else {
-                        text.text = "STOPPED"
-                        button.text = "START"
-                    }
+                    mqttService?.stop()
+                    text.text = "STOPPED"
+                    button.text = "START"
                 }
 
                 button.isEnabled = true
             }
         }
     }
-
 
     override fun onDestroy() {
         super.onDestroy()
