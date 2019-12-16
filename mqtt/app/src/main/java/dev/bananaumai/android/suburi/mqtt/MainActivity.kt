@@ -7,6 +7,7 @@ import android.os.IBinder
 import android.widget.Button
 import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -39,27 +40,30 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 button.isEnabled = false
 
+                var succeeded = false
+
                 if (isRunning) {
-                    mqttService?.disconnect()
+                    succeeded = mqttService?.disconnect() ?: false
                 } else {
-                    mqttService?.connect()
+                    succeeded = mqttService?.connect() ?: false
                 }
 
-                isRunning = !isRunning
+                if (succeeded) {
+                    isRunning = !isRunning
 
-                if (isRunning) {
-                    text.text = "RUNNING"
-                    button.text = "STOP"
-                } else {
-                    text.text = "STOPPED"
-                    button.text = "START"
+                    if (isRunning) {
+                        text.text = "RUNNING"
+                        button.text = "STOP"
+                    } else {
+                        text.text = "STOPPED"
+                        button.text = "START"
+                    }
                 }
 
                 button.isEnabled = true
             }
         }
     }
-
 
 
     override fun onDestroy() {

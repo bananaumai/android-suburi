@@ -7,6 +7,7 @@ import android.util.Log
 import android.widget.Button
 import androidx.lifecycle.Observer
 import androidx.work.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -75,18 +76,31 @@ class MainActivity : AppCompatActivity() {
 class SampleWork(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     @InternalCoroutinesApi
     override suspend fun doWork(): Result = coroutineScope {
-        val value = inputData.getString("value")
-        Log.i("Worker", "Worker($id) start with $value")
+        try {
+            val value = inputData.getString("value")
+            Log.i("Worker", "Worker($id) start with $value")
 
-        if (Random.nextBoolean()) {
-            Log.i("Worker", "Worker($id) will fail")
-            delay(5000)
-            //Result.failure()
-            throw RuntimeException("Worker failed")
-        } else {
-            Log.i("Worker", "Worker($id) will succeed")
-            delay(5000)
-            Result.success()
+            when(Random.nextInt(3)) {
+                0 -> {
+                    Log.i("Worker", "Worker($id) will fail")
+                    delay(5000)
+                    //Result.failure()
+                    throw RuntimeException("Worker failed")
+                }
+                1 -> {
+                    Log.i("Worker", "Worker($id) will succeed")
+                    delay(5000)
+                    Result.success()
+                }
+                else -> {
+                    Log.i("Worker", "Worker($id) will retry")
+                    delay(5000)
+                    Result.retry()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("Worker", "$e")
+            throw e
         }
     }
 }
