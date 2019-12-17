@@ -1,6 +1,5 @@
 package dev.bananaumai.android.suburi.mqtt
 
-import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.app.Service
@@ -9,13 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.PowerManager.WakeLock
 import android.util.Log
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
 import org.eclipse.paho.android.service.MqttAndroidClient
 import org.eclipse.paho.client.mqttv3.*
 import org.eclipse.paho.client.mqttv3.internal.ClientComms
@@ -34,8 +31,6 @@ class MqttService : Service() {
 
     private val scope = CoroutineScope(job)
 
-    private val mutex = Mutex()
-
     @Volatile
     private lateinit var client: IMqttAsyncClient
 
@@ -48,55 +43,54 @@ class MqttService : Service() {
         client = createClient()
 
         scope.launch {
-            connect()
+            launch { connect() }
+
+            launch {
+                var i = 0
+                while(true) {
+                    if (isRunning) {
+                        Log.v("MqttService", "Count: $i")
+                        publish(i.toString().toByteArray())
+                        i++
+                    }
+                    delay(1000)
+                }
+            }
         }
     }
 
-    @ExperimentalCoroutinesApi
     override fun onDestroy() {
         super.onDestroy()
 
-        scope.launch {
-            disconnect()
-            job.cancel()
+        disconnect()
+
+        if (client is MqttAsyncClient) {
+            client.close()
         }
+
+        job.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
         return binder
     }
 
-    @ExperimentalCoroutinesApi
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.v("MqttService", "onStartCommand")
-        scope.launch {
-            var i = 0
-            while(true) {
-                if (isRunning) {
-                    Log.v("MqttService", "Count: $i")
-                    publish(i.toString().toByteArray())
-                    i++
-                }
-                delay(1000)
-            }
-        }
         return START_STICKY
     }
 
-    @ExperimentalCoroutinesApi
     suspend fun start() {
         isRunning = true
-        connect()
+        withContext(Dispatchers.IO) { connect() }
     }
 
-    @ExperimentalCoroutinesApi
     suspend fun stop() {
         isRunning = false
-        disconnect()
+        withContext(Dispatchers.IO) { disconnect() }
     }
 
-    @ExperimentalCoroutinesApi
-    private suspend fun connect() {
+    private fun connect() {
         Log.d("MqttService", "connect")
 
         if (client.isConnected) {
@@ -109,35 +103,32 @@ class MqttService : Service() {
             connectionTimeout = 3
         }
 
-        withContext(Dispatchers.IO) {
-            val listener = object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    Log.i("MqttService", "connected")
-                }
-
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    Log.e("MqttService", "connection error", exception)
-                }
+        val listener = object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                Log.i("MqttService", "connected")
             }
 
-            try {
-                val token = client.connect(connectOptions, this, listener)
-                token.waitForCompletion(5_000L)
-            } catch(e: MqttException) {
-                if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
-                    Log.d("MqttService", "connection process timed out")
-                } else {
-                    Log.e("MqttService", "failed to connect", e)
-                }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                Log.e("MqttService", "connection error", exception)
             }
-
-            Log.d("MqttService", "connection completed")
         }
+
+        try {
+            val token = client.connect(connectOptions, this, listener)
+            token.waitForCompletion(5_000L)
+        } catch(e: MqttException) {
+            if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
+                Log.d("MqttService", "connection process timed out")
+            } else {
+                Log.e("MqttService", "failed to connect", e)
+            }
+        }
+
+        Log.d("MqttService", "connection completed")
     }
 
 
-    @ExperimentalCoroutinesApi
-    private suspend fun disconnect() {
+    private fun disconnect() {
         Log.d("MqttService", "disconnect")
 
         if (!client.isConnected) {
@@ -151,44 +142,39 @@ class MqttService : Service() {
             MqttException.REASON_CODE_CLIENT_DISCONNECTING.toInt()
         )
 
-        withContext(Dispatchers.IO) {
-            val listener = object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    Log.i("MqttService", "disconnected")
-                }
-
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    Log.i("MqttService", "disconnection error")
-                    if (exception is MqttException && expectedErrorReasonCode.contains(exception.reasonCode)) {
-                        Log.i("MqttService", "expected errors on disconnection")
-                    } else {
-                        Log.e("MqttService", "failed to disconnect", exception)
-                    }
-                }
+        val listener = object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                Log.i("MqttService", "disconnected")
             }
 
-
-            try {
-                val token = client.disconnect(1_000, this, listener)
-                token.waitForCompletion(10_000L)
-            } catch(e: MqttException) {
-                if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
-                    Log.d("MqttService", "disconnection process timed out", e)
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                Log.i("MqttService", "disconnection error")
+                if (exception is MqttException && expectedErrorReasonCode.contains(exception.reasonCode)) {
+                    Log.i("MqttService", "expected errors on disconnection")
                 } else {
-                    Log.e("MqttService", "failed to disconnect", e)
-                    return@withContext
+                    Log.e("MqttService", "failed to disconnect", exception)
                 }
             }
-
-            if (client is MqttAndroidClient) {
-                (client as MqttAndroidClient).unregisterResources()
-            } else {
-                client.close()
-                client = createClient()
-            }
-
-            Log.d("MqttService", "disconnection completed")
         }
+
+
+        try {
+            val token = client.disconnect(1_000, this, listener)
+            token.waitForCompletion(10_000L)
+        } catch(e: MqttException) {
+            if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
+                Log.d("MqttService", "disconnection process timed out", e)
+            } else {
+                Log.e("MqttService", "failed to disconnect", e)
+                return
+            }
+        }
+
+        if (client is MqttAndroidClient) {
+            (client as MqttAndroidClient).unregisterResources()
+        }
+
+        Log.d("MqttService", "disconnection completed")
     }
 
     private fun publish(payload: ByteArray) {
@@ -252,7 +238,6 @@ class MqttService : Service() {
 
 class AlarmPingSender(private val service: Service) : MqttPingSender {
     companion object {
-        // Identifier for Intents, log messages, etc..
         private const val TAG = "AlarmPingSender"
     }
 
