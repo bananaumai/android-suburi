@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.ConnectivityManager
 import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
@@ -19,6 +20,10 @@ import org.eclipse.paho.client.mqttv3.internal.ClientComms
 import org.eclipse.paho.client.mqttv3.persist.MqttDefaultFilePersistence
 
 class MqttService : Service() {
+    companion object {
+        const val DELAY_MILLISEC = 60_000L
+    }
+
     inner class MqttServiceBinder : Binder() {
         fun getService(): MqttService {
             return this@MqttService
@@ -31,16 +36,31 @@ class MqttService : Service() {
 
     private val scope = CoroutineScope(job)
 
+    private val reconnectAlarmReceiver = ReconnectAlarmReceiver()
+
     @Volatile
     private lateinit var client: IMqttAsyncClient
 
     @Volatile
     private var isRunning = false
 
+    private lateinit var connectivityManager: ConnectivityManager
+
+    private lateinit var alarmManager: AlarmManager
+
+    private lateinit var reconnectAlarmPendingIntent: PendingIntent
+
     @ExperimentalCoroutinesApi
     override fun onCreate() {
         super.onCreate()
+
         client = createClient()
+
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+
+        configureReconnectAlarm()
 
         scope.launch {
             launch { connect() }
@@ -62,11 +82,11 @@ class MqttService : Service() {
     override fun onDestroy() {
         super.onDestroy()
 
+        alarmManager.cancel(reconnectAlarmPendingIntent)
+
         disconnect()
 
-        if (client is MqttAsyncClient) {
-            client.close()
-        }
+        client.close()
 
         job.cancel()
     }
@@ -99,7 +119,6 @@ class MqttService : Service() {
         }
 
         val connectOptions = MqttConnectOptions().apply {
-            isAutomaticReconnect = true
             connectionTimeout = 3
         }
 
@@ -109,7 +128,7 @@ class MqttService : Service() {
             }
 
             override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                Log.e("MqttService", "connection error", exception)
+                Log.e("MqttService", "failed to connect", exception)
             }
         }
 
@@ -117,16 +136,28 @@ class MqttService : Service() {
             val token = client.connect(connectOptions, this, listener)
             token.waitForCompletion(5_000L)
         } catch(e: MqttException) {
-            if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
-                Log.d("MqttService", "connection process timed out")
-            } else {
-                Log.e("MqttService", "failed to connect", e)
+            when (e.reasonCode.toShort()) {
+                MqttException.REASON_CODE_CLIENT_TIMEOUT -> {
+                    Log.d("MqttService", "connection process timed out", e)
+                }
+                MqttException.REASON_CODE_CONNECT_IN_PROGRESS,
+                MqttException.REASON_CODE_CLIENT_CONNECTED,
+                MqttException.REASON_CODE_CLIENT_CLOSED,
+                MqttException.REASON_CODE_CLIENT_DISCONNECTING -> {
+                    Log.d("MqttService", "expected connection error", e)
+                }
+                else -> {
+                    Log.e("MqttService", "connection error", e)
+                }
             }
         }
 
-        Log.d("MqttService", "connection completed")
-    }
+        Log.d("MqttService", "connection process completed")
 
+        if (!client.isConnected) {
+            scheduleReconnect()
+        }
+    }
 
     private fun disconnect() {
         Log.d("MqttService", "disconnect")
@@ -136,42 +167,33 @@ class MqttService : Service() {
             return
         }
 
-        val expectedErrorReasonCode = listOf(
-            MqttException.REASON_CODE_CLIENT_ALREADY_DISCONNECTED.toInt(),
-            MqttException.REASON_CODE_CLIENT_CLOSED.toInt(),
-            MqttException.REASON_CODE_CLIENT_DISCONNECTING.toInt()
-        )
-
         val listener = object : IMqttActionListener {
             override fun onSuccess(asyncActionToken: IMqttToken?) {
                 Log.i("MqttService", "disconnected")
             }
 
             override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                Log.i("MqttService", "disconnection error")
-                if (exception is MqttException && expectedErrorReasonCode.contains(exception.reasonCode)) {
-                    Log.i("MqttService", "expected errors on disconnection")
-                } else {
-                    Log.e("MqttService", "failed to disconnect", exception)
-                }
+                Log.e("MqttService", "failed to disconnect", exception)
             }
         }
-
 
         try {
             val token = client.disconnect(1_000, this, listener)
             token.waitForCompletion(10_000L)
         } catch(e: MqttException) {
-            if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
-                Log.d("MqttService", "disconnection process timed out", e)
-            } else {
-                Log.e("MqttService", "failed to disconnect", e)
-                return
+            when (e.reasonCode.toShort()) {
+                MqttException.REASON_CODE_CLIENT_TIMEOUT -> {
+                    Log.d("MqttService", "disconnection process timed out", e)
+                }
+                MqttException.REASON_CODE_CLIENT_DISCONNECTING,
+                MqttException.REASON_CODE_CLIENT_ALREADY_DISCONNECTED,
+                MqttException.REASON_CODE_CLIENT_CLOSED -> {
+                    Log.d("MqttService", "expected disconnection error", e)
+                }
+                else -> {
+                    Log.e("MqttService", "disconnection error", e)
+                }
             }
-        }
-
-        if (client is MqttAndroidClient) {
-            (client as MqttAndroidClient).unregisterResources()
         }
 
         Log.d("MqttService", "disconnection completed")
@@ -198,21 +220,10 @@ class MqttService : Service() {
     private fun createClient(): IMqttAsyncClient {
         val url = BuildConfig.MQTT_SERVER_URL
         val clientId = MqttClient.generateClientId()
-
-        val client = when (BuildConfig.MQTT_CLIENT) {
-            "ANDROID" -> {
-                MqttAndroidClient(this, url, clientId)
-            }
-            "NATIVE" -> {
-                val dir = applicationContext.getExternalFilesDir("mqtt")
-                val persistence = MqttDefaultFilePersistence(dir!!.absolutePath)
-                val pingSender = AlarmPingSender(this)
-                MqttAsyncClient(url, clientId, persistence, pingSender)
-            }
-            else -> {
-                throw RuntimeException("invalid client")
-            }
-        }
+        val dir = applicationContext.getExternalFilesDir("mqtt")
+        val persistence = MqttDefaultFilePersistence(dir!!.absolutePath)
+        val pingSender = AlarmPingSender(this)
+        val client = MqttAsyncClient(url, clientId, persistence, pingSender)
 
         client.setCallback(object : MqttCallbackExtended {
             override fun connectComplete(reconnect: Boolean, serverURI: String?) {
@@ -221,6 +232,9 @@ class MqttService : Service() {
 
             override fun connectionLost(cause: Throwable?) {
                 Log.v("MqttService", "connectionLost", cause)
+                if (cause != null) {
+                    scheduleReconnect()
+                }
             }
 
             override fun deliveryComplete(token: IMqttDeliveryToken?) {
@@ -233,6 +247,46 @@ class MqttService : Service() {
         })
 
         return client
+    }
+
+    private fun isOnline(): Boolean {
+        val networkInfo = connectivityManager.activeNetworkInfo
+        return networkInfo != null && networkInfo.isConnected
+    }
+
+    private fun scheduleReconnect() {
+        val nextAlarmInMilliseconds = System.currentTimeMillis() + DELAY_MILLISEC
+
+        Log.d("MqttService", "schedules mqtt reconnect alarm in next $DELAY_MILLISEC milliseconds, at $nextAlarmInMilliseconds")
+
+        alarmManager.cancel(reconnectAlarmPendingIntent)
+
+        alarmManager.setExactAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            nextAlarmInMilliseconds,
+            reconnectAlarmPendingIntent
+        )
+    }
+
+    private fun configureReconnectAlarm() {
+        val action = ReconnectAlarmReceiver::class.java.name
+
+        registerReceiver(reconnectAlarmReceiver, IntentFilter(action))
+
+        reconnectAlarmPendingIntent = PendingIntent.getBroadcast(
+            this,
+            0,
+            Intent(action),
+            PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
+    internal inner class ReconnectAlarmReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (isOnline()) {
+                connect()
+            }
+        }
     }
 }
 
@@ -247,6 +301,7 @@ class AlarmPingSender(private val service: Service) : MqttPingSender {
     @Volatile
     private var hasStarted = false
 
+    @Volatile
     private var pendingIntent: PendingIntent? = null
 
     override fun init(comms: ClientComms) {
@@ -282,7 +337,7 @@ class AlarmPingSender(private val service: Service) : MqttPingSender {
             return
         }
 
-        Log.d(TAG, "unregister alarm receiver to ${service.javaClass.simpleName}")
+        Log.d(TAG, "unregister alarm receiver from ${service.javaClass.simpleName}")
 
         if (pendingIntent != null) {
             val alarmManager = service.getSystemService(Service.ALARM_SERVICE) as AlarmManager
@@ -317,39 +372,29 @@ class AlarmPingSender(private val service: Service) : MqttPingSender {
         private val wakeLockTag = "${service.javaClass.simpleName}-${javaClass.simpleName}-${comms.client.clientId}"
 
         override fun onReceive(context: Context, intent: Intent) {
-            // According to the docs, "Alarm Manager holds a CPU wake lock as
-            // long as the alarm receiver's onReceive() method is executing.
-            // This guarantees that the phone will not sleep until you have
-            // finished handling the broadcast.", but this class still get
-            // a wake lock to wait for ping finished.
-            Log.d(TAG, "sending Ping at: ${System.currentTimeMillis()}")
             val pm = service.getSystemService(Service.POWER_SERVICE) as PowerManager
 
             wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, wakeLockTag)
-
             wakelock?.acquire(60_000L)
 
-            // Assign new callback to token to execute code after PingResq
-            // arrives. Get another wakelock even receiver already has one,
-            // release it until ping response returns.
             val listener = object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken) {
-                    Log.d(TAG, "succeeded, release lock($wakeLockTag): ${System.currentTimeMillis()}")
+                    Log.d(TAG, "succeeded to ping")
                     wakelock?.release()
                 }
 
                 override fun onFailure(asyncActionToken: IMqttToken, exception: Throwable) {
-                    Log.d(TAG, "failed, release lock($wakeLockTag): ${System.currentTimeMillis()}")
+                    Log.d(TAG, "failed to ping")
                     wakelock?.release()
                 }
             }
-            val token: IMqttToken? = comms.checkForActivity(listener)
+
+            Log.d(TAG, "ping at ${System.currentTimeMillis()}")
+
+            val token = comms.checkForActivity(listener)
 
             if (token == null) {
-                val isHeld = wakelock?.isHeld ?: false
-                if (isHeld) {
-                    wakelock?.release()
-                }
+                wakelock?.release()
             }
         }
     }

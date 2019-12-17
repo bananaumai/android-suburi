@@ -18,14 +18,11 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField("String", "MQTT_CLIENT", "\"ANDROID\"")
         }
         debug {
             debuggable true
-//            buildConfigField("String", "MQTT_CLIENT", "\"NATIVE\"")
-            buildConfigField("String", "MQTT_CLIENT", "\"ANDROID\"")
-//            buildConfigField("String", "MQTT_SERVER_URL", "\"tcp://172.16.240.30:1883\"")
-            buildConfigField("String", "MQTT_SERVER_URL", "\"tcp://10.0.2.2:1883\"")
+            buildConfigField("String", "MQTT_SERVER_URL", "\"tcp://172.16.240.30:1883\"")
+//            buildConfigField("String", "MQTT_SERVER_URL", "\"tcp://10.0.2.2:1883\"")
         }
     }
 }
